@@ -1,0 +1,319 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MigPlast — Sistema de Gestão</title>
+<meta name="theme-color" content="#126443">
+<meta name="description" content="Gestão MigPlast: compras, vendas, custos, produção e romaneios em PDF.">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png"><style>
+:root{font-family:Arial,sans-serif;color:#19342c;background:#f2f6f3}*{box-sizing:border-box}body{margin:0}header{background:#126443;color:white;padding:20px}header h1{margin:0}header small{opacity:.85}main{max-width:1150px;margin:auto;padding:18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:13px}.tile,.panel{background:white;border:1px solid #d8e5db;border-radius:13px;padding:18px;box-shadow:0 2px 5px #0001}.tile{cursor:pointer;text-align:left;min-height:130px}.tile:hover{border-color:#128252}.tile b{display:block;font-size:18px;margin:12px 0 6px}.tile small{color:#63736a}.emoji{font-size:27px}.panel{margin-top:14px}h2{margin-top:0}button{font:inherit;cursor:pointer}button.primary{background:#126443;color:white;border:0;border-radius:7px;padding:12px 18px}.back{background:none;border:0;color:#126443;font-weight:bold;padding:12px 0}input,select{padding:11px;border:1px solid #bfcfc4;border-radius:7px;width:100%}label{display:block;font-size:13px;font-weight:bold;margin-bottom:5px}.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:12px;margin-bottom:12px}.summary{display:flex;flex-wrap:wrap;gap:12px}.summary>div{background:#e8f4eb;border-radius:9px;padding:14px;flex:1;min-width:155px}.summary b{display:block;font-size:21px;margin-top:7px}table{width:100%;border-collapse:collapse;margin-top:15px;font-size:13px}th,td{padding:10px;border-bottom:1px solid #e0e8e2;text-align:left}th{background:#eaf3ed}.scroll{overflow:auto}.hint{font-size:13px;color:#617267}.danger{color:#aa3434}.row{display:flex;justify-content:space-between;gap:10px;align-items:center}.secondary{background:#fff;border:1px solid #cbd9ce;border-radius:7px;padding:9px}.hide{display:none}#notice{color:#126443;font-weight:bold}
+@media print{header,.no-print,.back,.tile{display:none!important}body{background:white}main{max-width:none;padding:0}.panel{box-shadow:none;border:0}.summary>div{break-inside:avoid}table{font-size:11px}} 
+.kpi-color{border:0!important;color:white!important;box-shadow:0 5px 15px #0002!important;transition:transform .2s,box-shadow .2s}.kpi-color:hover{transform:translateY(-3px);box-shadow:0 9px 20px #0003!important}.kpi-color small{color:#ffffffdc!important}.kpi-color b{font-size:25px}.kpi-color:nth-child(6n+1){background:linear-gradient(135deg,#168458,#0b543b)}.kpi-color:nth-child(6n+2){background:linear-gradient(135deg,#1976bd,#123f78)}.kpi-color:nth-child(6n+3){background:linear-gradient(135deg,#a65ad4,#6533a0)}.kpi-color:nth-child(6n+4){background:linear-gradient(135deg,#ec8b28,#bd551b)}.kpi-color:nth-child(6n+5){background:linear-gradient(135deg,#139d9a,#12636e)}.kpi-color:nth-child(6n+6){background:linear-gradient(135deg,#d45779,#97375a)}
+.alerta{border-radius:12px;padding:16px 20px;margin:14px 0;font-weight:bold}.alerta.positivo{background:#ddf6e7;color:#12613c;border:1px solid #9cdbb6}.alerta.negativo{background:#ffe4e4;color:#9c2222;border:1px solid #f1aaaa}.alerta.neutro{background:#fff2d6;color:#81500e;border:1px solid #eac884}.subalerta{font-size:13px;font-weight:normal;margin-top:6px}
+@media print{body:has(.ticket-paper) header,body:has(.ticket-paper) .back,body:has(.ticket-paper)>main>div>h2,body:has(.ticket-paper)>main>div>p{display:none!important}.ticket-paper{border:0;box-shadow:none;margin:0;padding:10px}}
+@media print{.kpi-color{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+</style></head><body><header><h1>♻ MigPlast</h1><small>Sistema de gestão — base limpa para construção por etapas</small></header><main><div id="app"></div></main><script>
+const KEY='migplast_base_limpa_v2';
+const MATERIAIS=['Aparas Mistas','Aparas Branca Limpa','Aparas Colorida Limpa','Aparas Branca Lavar','Aparas Colorida Lavar','Aparas Branca Lavada','Aparas Colorida Lavada','PEBD Filme Branco','PEBD Filme Colorido','PEBD Filme Misto','PEAD Natural','PEAD Preto','PP','Outro material'];
+let reportStart='',reportEnd='';
+function setFilter(k,v){if(k==='start')reportStart=v;else reportEnd=v;render()}
+function filtered(){return db.filter(r=>(!reportStart||r.data>=reportStart)&&(!reportEnd||r.data<=reportEnd))}
+const icons=[
+['compras','🛒','Compra de material × Precificação','Entradas e custo de aquisição'],
+['fretes','🚚','Fretes','Fretes de compra, venda e M.O.'],
+['moestoque','🫧','Estoque M.O. × Precificação','Material do cliente: entrada, lavagem e entrega'],
+['proprio','📦','Estoque Venda × Precificação','Material próprio e preço de venda'],
+['vendamaterial','💰','Venda de Material × Faturamento','Baixa do estoque próprio'],
+['vendamo','🧺','Venda de M.O. × Faturamento','Cobrança dos serviços realizados'],
+['despesas','🧾','Despesas','Custos gerais'],
+['salarios','👷','Salários','Pagamentos de pessoal'],
+['diaristas','🧑‍🏭','Diaristas','Diárias e pagamentos eventuais'],
+['triagem','🧤','M.O. Triagem','Triagem paga por kg e trabalhador'],
+['producao','⚙️','Produção por Etapa','Registrar kg moídos, lavados e prontos para venda'],
+['custos','🧮','Custos por kg e Margens','Custo operacional, preço de venda e margem estimada'],
+['painel','📊','Painel de Controle','Resumo dos estoques, faturamento e despesas'],['relatorio','📈','Relatório gerencial','Margem e lucro/prejuízo estimados']];
+const fields={producao:[['etapa','Etapa','choice','Moagem|Lavagem|Material pronto para venda'],['material','Material'],['kg','Quantidade produzida (kg)','number'],['descricao','Observações / lote']],compras:[['fornecedor','Fornecedor'],['material','Material'],['kg','Quantidade (kg)','number'],['preco','Custo por kg (R$)','number']],fretes:[['etapa','Alocar custo para','choice','Geral|Moagem|Lavagem|Material pronto para venda'],['tipo','Tipo (compra, venda ou M.O.)'],['descricao','Descrição'],['valor','Valor (R$)','number']],moestoque:[['cliente','Cliente'],['material','Material'],['movimento','Movimento','choice','Entrada para lavar|Lavado pronto|Entrega ao cliente'],['kg','Quantidade (kg)','number'],['preco','Preço serviço por kg (R$)','number']],proprio:[['material','Material'],['movimento','Movimento','choice','Entrada de estoque próprio|Ajuste positivo|Ajuste negativo'],['kg','Quantidade (kg)','number'],['preco','Preço de venda por kg (R$)','number']],vendamaterial:[['cliente','Cliente'],['material','Material'],['kg','Quantidade (kg)','number'],['preco','Preço de venda por kg (R$)','number']],vendamo:[['cliente','Cliente'],['material','Material'],['kg','Quantidade faturada (kg)','number'],['preco','Preço do serviço por kg (R$)','number']],despesas:[['etapa','Alocar custo para','choice','Geral|Moagem|Lavagem|Material pronto para venda'],['descricao','Descrição'],['valor','Valor (R$)','number']],salarios:[['etapa','Alocar custo para','choice','Geral|Moagem|Lavagem|Material pronto para venda'],['colaborador','Colaborador'],['descricao','Referência / período'],['valor','Valor (R$)','number']],diaristas:[['etapa','Alocar custo para','choice','Geral|Moagem|Lavagem|Material pronto para venda'],['colaborador','Diarista'],['descricao','Atividade / período'],['valor','Valor da diária / pagamento (R$)','number']],triagem:[['etapa','Alocar custo para','choice','Geral|Moagem|Lavagem|Material pronto para venda'],['colaborador','Colaborador'],['material','Material'],['kg','Quantidade triada (kg)','number'],['preco','Pagamento por kg (R$)','number']]};
+let db=[],storageOK=true;try{let raw=localStorage.getItem(KEY);db=raw?JSON.parse(raw):[];if(!Array.isArray(db))db=[];localStorage.setItem(KEY,JSON.stringify(db));}catch(e){storageOK=false;db=[]}let page='inicio',ticketId=null,preselectedSaleIds=[];
+const DOC_KEY='migplast_romaneios_v1',BANK_KEY='migplast_banco_v1';
+let docs=[],bank={favorecido:'',pix:'',banco:'',agencia:'',conta:'',tipo:''};
+try{docs=JSON.parse(localStorage.getItem(DOC_KEY)||'[]');if(!Array.isArray(docs))docs=[];bank={...bank,...JSON.parse(localStorage.getItem(BANK_KEY)||'{}')}}catch(e){}
+function saveDocs(){try{localStorage.setItem(DOC_KEY,JSON.stringify(docs));localStorage.setItem(BANK_KEY,JSON.stringify(bank));return true}catch(e){alert('Não foi possível salvar o romaneio: '+e.message);return false}}
+
+const n=x=>Number(String(x??0).replace(',','.'))||0,fmt=x=>n(x).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}),brl=x=>'R$ '+fmt(x),esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),save=()=>{try{localStorage.setItem(KEY,JSON.stringify(db));let verify=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(verify)||verify.length!==db.length)throw Error('Falha na conferência');storageOK=true;return true}catch(e){storageOK=false;alert('Não foi possível salvar no navegador. Faça um backup JSON antes de fechar. Motivo: '+e.message);return false}};
+function total(r){return ['compras','moestoque','proprio','vendamaterial','vendamo','triagem'].includes(r.modulo)?n(r.kg)*n(r.preco):n(r.valor)}
+function stock(mod){let map={};for(let r of db){if(r.modulo!==mod)continue;let key=mod==='moestoque'?r.cliente+'|||'+r.material:r.material;let x=map[key]||(map[key]={material:r.material,cliente:r.cliente,lavar:0,lavado:0,kg:0,preco:0});let q=n(r.kg);if(mod==='moestoque'){if(r.movimento==='Entrada para lavar')x.lavar+=q;else if(r.movimento==='Lavado pronto'){x.lavar-=q;x.lavado+=q}else if(r.movimento==='Entrega ao cliente')x.lavado-=q}else{if(r.movimento==='Ajuste negativo')x.kg-=q;else x.kg+=q}if(n(r.preco))x.preco=n(r.preco)}return map}
+function materialBalance(material){let x=stock('proprio')[material];return (x?x.kg:0)-db.filter(r=>r.modulo==='vendamaterial'&&r.material===material).reduce((s,r)=>s+n(r.kg),0)}
+function backup(){let data=JSON.stringify({formato:'migplast-backup-v1',registros:db,romaneios:docs,dadosBancarios:bank,criado:new Date().toISOString()},null,2);let blob=new Blob([data],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='MigPlast_Backup_'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}
+function restore(input){let file=input.files&&input.files[0];if(!file)return;let reader=new FileReader();reader.onload=()=>{try{let raw=JSON.parse(reader.result),items=Array.isArray(raw)?raw:raw.registros;if(!Array.isArray(items)||items.some(x=>!x||typeof x!=='object'||!x.modulo))throw Error('Arquivo incompatível');if(!confirm('Importar '+items.length+' lançamentos? Isso substituirá os registros atualmente abertos. Faça backup antes.'))return;let old=db,oldDocs=docs,oldBank=bank;db=items;docs=Array.isArray(raw.romaneios)?raw.romaneios:[];bank=raw.dadosBancarios||bank;if(!save()||!saveDocs()){db=old;docs=oldDocs;bank=oldBank;return}page='inicio';render();alert('Backup importado: '+items.length+' lançamentos.')}catch(e){alert('Erro ao importar: '+e.message)}};reader.readAsText(file);input.value=''}
+function storageTools(){return `<div class="panel no-print" style="background:#f4faf6"><div class="row"><div><b>💾 Registros salvos neste navegador: ${db.length}</b><div class="hint">${storageOK?'Armazenamento local disponível.':'⚠️ Armazenamento local bloqueado: baixe um backup.'} Não sincroniza entre arquivos, aparelhos ou navegadores.</div></div></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"><button class="primary" onclick="backup()">⬇ Baixar backup JSON</button><label class="secondary" style="cursor:pointer;margin:0">⬆ Importar backup JSON<input type="file" accept=".json,application/json" style="display:none" onchange="restore(this)"></label></div></div>`}
+function render(){let a=document.getElementById('app');if(page==='inicio'){a.innerHTML=`<div class="row"><h2>Central de Lançamentos</h2><button class="primary" onclick="go('painel')">📊 Abrir Painel</button></div><p class="hint">Módulos integrados de lançamentos e produção. Cada lançamento alimenta o estoque, faturamento ou despesas correspondentes.</p><div class="grid">${icons.filter(x=>x[0]!=='painel').map(([id,i,title,desc])=>`<button class="tile" onclick="go('${id}')"><span class="emoji">${i}</span><b>${title}</b><small>${desc}</small></button>`).join('')}</div><div class="panel"><button class="primary" onclick="go('romaneio')">📄 Romaneios por cliente e dados bancários</button></div>${storageTools()}`;return}
+let meta=icons.find(x=>x[0]===page)||(page==='romaneio'?['romaneio','☑','Romaneios por cliente','Documentos com vários itens e dados bancários']:null);if(!meta){page='inicio';return render()}a.innerHTML=`<button class="back" onclick="go('inicio')">← Voltar aos ícones</button><h2>${meta[1]} ${meta[2]}</h2><p class="hint">${meta[3]}</p>${page==='romaneio'?ticketHTML():page==='relatorio'?report():page==='painel'?painelHTML():page==='custos'?custosHTML():moduleHTML(page)}`;}
+function go(x){page=x;render()}
+function moduleHTML(id){let f=fields[id],entries=db.filter(r=>r.modulo===id);let html=`<div class="panel"><h3>Novo lançamento</h3><form id="form" onsubmit="add(event,'${id}')"><div class="fields"><div><label>Data</label><input name="data" type="date" required value="${new Date().toISOString().slice(0,10)}"></div>${f.map(([k,label,type,options])=>`<div><label>${label}</label>${type==='choice'||k==='material'?`<select name="${k}">${(k==='material'?MATERIAIS:options.split('|')).map(o=>`<option>${o}</option>`).join('')}</select>`:`<input name="${k}" type="${type||'text'}" ${type==='number'?'step="0.01" min="0"':''} required>`}</div>`).join('')}</div><button class="primary">Salvar lançamento</button> <span id="notice"></span></form></div>`;
+let sum=entries.reduce((s,r)=>s+total(r),0);
+html+=`<div class="panel"><div class="row"><h3>Registros (${entries.length})</h3><b>${brl(sum)}</b></div>`;
+if(id==='moestoque'||id==='proprio'){let st=stock(id);html+=`<div class="summary">${Object.values(st).map(x=>id==='moestoque'?`<div><small>${esc(x.cliente)} — ${esc(x.material)}</small><b>${fmt(x.lavar)} kg a lavar</b><b>${fmt(x.lavado)} kg lavado</b><small>Referência de serviço: ${brl((x.lavar+x.lavado)*x.preco)}</small></div>`:`<div><small>${esc(x.material)}</small><b>${fmt(materialBalance(x.material))} kg</b><small>Valor potencial de venda: ${brl(materialBalance(x.material)*x.preco)}</small></div>`).join('')}</div>`}
+if(['vendamaterial','vendamo'].includes(id))html+=`<div style="padding:12px 0"><button class="primary" onclick="selecionarVendas('${id}')">📄 Gerar romaneio dos itens marcados</button><p class="hint">Marque os materiais vendidos ao mesmo cliente na tabela abaixo.</p><div id="salesSelection">0 itens selecionados</div></div>`;
+html+=`<div class="scroll"><table><thead><tr>${['vendamaterial','vendamo'].includes(id)?'<th>Selecionar</th>':''}<th>Data</th>${f.map(x=>`<th>${x[1]}</th>`).join('')}<th>Valor</th><th>Documento</th><th></th></tr></thead><tbody>${entries.slice().reverse().map(r=>`<tr>${['vendamaterial','vendamo'].includes(id)?`<td><input type="checkbox" name="vendaSelecionada" value="${esc(r.id)}" onchange="updateSelectedSales()" style="width:22px;height:22px;accent-color:#126443"></td>`:''}<td>${esc(r.data)}</td>${f.map(([k])=>`<td>${esc(r[k])}</td>`).join('')}<td>${brl(total(r))}</td><td>${['vendamaterial','vendamo'].includes(id)?`<button class="secondary" onclick="ticket('${r.id}')">📄 Abrir romaneios</button>`:'—'}</td><td><button class="secondary danger" onclick="remove('${r.id}')">Excluir</button></td></tr>`).join('')}</tbody></table></div></div>`;return html}
+function add(e,id){e.preventDefault();let o=Object.fromEntries(new FormData(e.target));o.id=String(Date.now())+'_'+Math.random().toString(36).slice(2);o.modulo=id;
+if(n(o.kg)<=0&&['compras','moestoque','proprio','vendamaterial','vendamo','triagem'].includes(id))return alert('Informe quantidade maior que zero.');
+if(id==='moestoque'){let x=stock(id)[o.cliente+'|||'+o.material]||{lavar:0,lavado:0};if(o.movimento==='Lavado pronto'&&n(o.kg)>x.lavar+.00001)return alert('Não há esta quantidade disponível para lavar neste cliente/material.');if(o.movimento==='Entrega ao cliente'&&n(o.kg)>x.lavado+.00001)return alert('Não há esta quantidade lavada disponível para entregar.')}
+if(id==='vendamaterial'&&n(o.kg)>materialBalance(o.material)+.00001)return alert('Quantidade maior que o estoque próprio disponível para venda.');
+if(id==='proprio'&&o.movimento==='Ajuste negativo'&&n(o.kg)>materialBalance(o.material)+.00001)return alert('Ajuste maior que o estoque disponível.');
+db.push(o);if(!save()){db.pop();return}render();alert('Lançamento salvo! Total de registros: '+db.length)}
+function remove(id){if(!confirm('Excluir este lançamento? Confira os saldos após a exclusão.'))return;let old=db;db=db.filter(x=>x.id!==id);if(!save()){db=old;return}render()}
+function ticket(id){ticketId=id||null;preselectedSaleIds=[];page='romaneio';render()}
+function selecionarVendas(mod){
+let selected=[...document.querySelectorAll('input[name="vendaSelecionada"]:checked')].map(x=>x.value);
+if(!selected.length)return alert('Marque os materiais na coluna Selecionar.');
+let rows=db.filter(x=>selected.includes(x.id));
+if(new Set(rows.map(x=>String(x.cliente||'').trim().toLowerCase())).size!==1)return alert('Selecione somente materiais do mesmo cliente.');
+if(rows.some(x=>x.modulo!==mod))return alert('Seleção inválida.');
+let used=new Set(docs.flatMap(d=>d.itens.map(i=>i.id)));
+if(rows.some(x=>used.has(x.id)))return alert('Material já incluído em outro romaneio.');
+preselectedSaleIds=selected;ticketId=null;page='romaneio';render();
+}
+function updateSelectedSales(){let ids=[...document.querySelectorAll('input[name="vendaSelecionada"]:checked')].map(x=>x.value),rows=db.filter(x=>ids.includes(x.id)),out=document.getElementById('salesSelection');if(out)out.textContent=rows.length+' item(ns) — '+fmt(rows.reduce((a,x)=>a+n(x.kg),0))+' kg — '+brl(rows.reduce((a,x)=>a+total(x),0))}
+
+function saveBank(e){e.preventDefault();let f=document.getElementById('ticketForm');if(f){let marked=[...f.querySelectorAll('input[name="item"]:checked')].map(x=>x.value);if(marked.length)preselectedSaleIds=marked;}let o=Object.fromEntries(new FormData(e.target));bank=o;if(saveDocs()){alert('Dados bancários salvos. Sua seleção de '+preselectedSaleIds.length+' material(is) foi mantida. Agora gere o romaneio.')}}
+function selecionarMateriais(){let f=document.getElementById('ticketForm');if(!f)return;refreshItems();let area=document.getElementById('ticketItems');if(area){area.scrollIntoView({behavior:'smooth',block:'center'});area.style.outline='3px solid #15955d';setTimeout(()=>area.style.outline='',1200)}}
+function atualizarSelecao(){let f=document.getElementById('ticketForm'),out=document.getElementById('ticketSelection');if(!f||!out)return;let ids=[...f.querySelectorAll('input[name=item]:checked')].map(x=>x.value);if(ids.length)preselectedSaleIds=ids.slice();let items=db.filter(x=>ids.includes(x.id));out.textContent=items.length+' material(is) selecionado(s) • '+fmt(items.reduce((a,x)=>a+n(x.kg),0))+' kg • '+brl(items.reduce((a,x)=>a+total(x),0))}
+function saveTicket(e){
+e.preventDefault();
+let f=document.getElementById('ticketForm');
+if(!f)return alert('Formulário de romaneio não encontrado.');
+let ids=[...f.querySelectorAll('input[name="item"]:checked')].map(x=>String(x.value));
+if(preselectedSaleIds.length>ids.length){let valid=new Set([...f.querySelectorAll('input[name="item"]')].map(x=>x.value));ids=[...new Set([...ids,...preselectedSaleIds.filter(id=>valid.has(id))])];}
+if(!ids.length && preselectedSaleIds.length)ids=[...preselectedSaleIds];
+if(!ids.length)return alert('Nenhum material marcado. Confira a lista de materiais acima.');
+
+let usedIds=new Set(docs.flatMap(d=>d.itens.map(i=>String(i.id))));
+let selected=db.filter(x=>ids.includes(String(x.id))&&['vendamaterial','vendamo'].includes(x.modulo)&&!usedIds.has(String(x.id)));
+
+if(!selected.length)return alert('Nenhum material disponível foi identificado. Talvez já esteja em outro romaneio.  Volte à Venda de Material, marque os itens e clique em Gerar romaneio dos itens marcados.');
+let clients=[...new Set(selected.map(x=>String(x.cliente||'').trim().toLowerCase()))];
+if(clients.length!==1)return alert('Os itens selecionados precisam pertencer ao mesmo cliente.');
+let mods=[...new Set(selected.map(x=>x.modulo))];
+if(mods.length!==1)return alert('Selecione somente vendas de material ou somente serviços de M.O.');
+let used=new Set(docs.flatMap(x=>x.itens.map(i=>String(i.id))));
+if(selected.some(x=>used.has(String(x.id))))return alert('Um item já está em outro romaneio. Exclua o romaneio antigo primeiro.');
+if(selected.length===1&&!confirm('ATENÇÃO: somente 1 material está selecionado. Deseja realmente gerar um romaneio com apenas 1 item?\n\nPara juntar dois ou mais, clique em Cancelar e marque todos os materiais.'))return;
+let date=f.querySelector('[name="data"]')?.value||new Date().toISOString().slice(0,10);
+let doc={id:'ROM-'+Date.now(),cliente:selected[0].cliente,data:date,modulo:mods[0],itens:selected.map(x=>({id:x.id,material:x.material,kg:x.kg,preco:x.preco})),banco:{...bank}};
+docs.push(doc);
+if(!saveDocs()){docs.pop();return}
+ticketId=doc.id;preselectedSaleIds=[];render();alert('Romaneio salvo para '+doc.cliente+' com '+selected.length+' item(ns).');
+}
+function excluirRomaneio(id){
+let doc=docs.find(x=>x.id===id);if(!doc)return alert('Romaneio não encontrado.');
+if(!confirm('Excluir o romaneio '+doc.id+' de '+doc.cliente+'?\n\nOs lançamentos das vendas serão mantidos e os itens poderão ser selecionados novamente.'))return;
+let anterior=docs.slice();docs=docs.filter(x=>x.id!==id);
+if(!saveDocs()){docs=anterior;return}
+if(ticketId===id)ticketId=null;
+preselectedSaleIds=[];render();alert('Romaneio excluído. Os itens de venda estão liberados para gerar outro documento.');
+}
+function textoRomaneio(id){
+let d=docs.find(x=>String(x.id)===String(id));if(!d)return '';
+let linhas=['MIGPLAST — ROMANEIO DE '+(d.modulo==='vendamo'?'SERVIÇOS':'VENDA DE MATERIAL'),'Nº: '+d.id,'Data: '+d.data,'Cliente: '+d.cliente,'','MATERIAIS'];
+d.itens.forEach((i,k)=>linhas.push((k+1)+'. '+i.material+' | '+fmt(i.kg)+' kg | '+brl(i.preco)+'/kg | '+brl(n(i.kg)*n(i.preco))));
+linhas.push('','PESO TOTAL: '+fmt(d.itens.reduce((a,i)=>a+n(i.kg),0))+' kg','VALOR TOTAL: '+brl(d.itens.reduce((a,i)=>a+n(i.kg)*n(i.preco),0)),'','DADOS PARA PAGAMENTO','Favorecido: '+(d.banco?.favorecido||'Não informado'),'Pix: '+(d.banco?.pix||'Não informado'),'Banco: '+(d.banco?.banco||'Não informado'),'Agência: '+(d.banco?.agencia||'Não informado'),'Conta: '+(d.banco?.conta||'Não informado'),'Tipo: '+(d.banco?.tipo||'Não informado'),'','Documento comercial de controle e entrega. Não substitui NF-e ou NFS-e.');
+return linhas.join('\\n');
+}
+function gerarArquivoRomaneioPDF(id){
+const d=docs.find(x=>String(x.id)===String(id));if(!d)throw Error('Romaneio não encontrado.');
+const norm=t=>String(t??'').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,'-');
+const escPDF=t=>norm(t).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+const pageW=595,pageH=842,left=42,right=553;
+let pages=[],ops=[],y=795;
+function txt(t,x,sz=10,bold=false){ops.push('BT /'+(bold?'F2':'F1')+' '+sz+' Tf 1 0 0 1 '+x+' '+y+' Tm ('+escPDF(t)+') Tj ET')}
+function line(){ops.push('0.7 w '+left+' '+y+' m '+right+' '+y+' l S')}
+function newPage(){if(ops.length)pages.push(ops.join('\n'));ops=[];y=795}
+function row(t,sz=10,bold=false,indent=0){if(y<65)newPage();txt(t,left+indent,sz,bold);y-=sz+8}
+function wrap(t,width=90){let words=norm(t).split(/\s+/),lines=[],cur='';for(const w of words){if((cur+' '+w).trim().length>width){if(cur)lines.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)lines.push(cur);return lines}
+row('MIGPLAST - RECICLAGEM DE PLASTICOS',17,true);row('ROMANEIO '+(d.modulo==='vendamo'?'DE SERVICOS':'DE VENDA DE MATERIAL'),12,true);y-=5;line();y-=18;
+row('Romaneio: '+d.id+'     Data: '+d.data,11,true);
+for(const l of wrap('Cliente: '+d.cliente,80))row(l,11,true);
+y-=5;row('MATERIAIS',12,true);line();y-=16;
+d.itens.forEach((i,k)=>{
+for(const l of wrap((k+1)+'. '+i.material,82))row(l,10,true);
+row('Peso: '+fmt(i.kg)+' kg    Preco/kg: '+brl(i.preco)+'    Subtotal: '+brl(n(i.kg)*n(i.preco)),9,false,12);
+y-=3;
+});
+if(y<205)newPage();
+line();y-=18;
+row('PESO TOTAL: '+fmt(d.itens.reduce((a,i)=>a+n(i.kg),0))+' kg',12,true);
+row('VALOR TOTAL: '+brl(d.itens.reduce((a,i)=>a+n(i.kg)*n(i.preco),0)),12,true);
+y-=10;row('DADOS PARA PAGAMENTO',12,true);line();y-=16;
+const b=d.banco||{};
+for(const [label,key] of [['Favorecido','favorecido'],['Chave Pix','pix'],['Banco','banco'],['Agencia','agencia'],['Conta','conta'],['Tipo de conta','tipo']])for(const l of wrap(label+': '+(b[key]||'Nao informado'),85))row(l,10);
+y-=18;row('Recebido por: ________________________________________',10);
+row('Data do recebimento: ____/____/________',10);
+y-=12;for(const l of wrap('Documento comercial de controle e entrega. Nao substitui NF-e ou NFS-e.',90))row(l,8);
+newPage();
+const encoder=new TextEncoder();
+const objs=[null,'<< /Type /Catalog /Pages 2 0 R >>',null,
+'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'];
+const pageRefs=[];
+for(const content of pages){
+const pageNum=objs.length;
+const contentNum=pageNum+1;
+pageRefs.push(pageNum+' 0 R');
+objs.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+pageW+' '+pageH+'] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+contentNum+' 0 R >>');
+const len=encoder.encode(content).length;
+objs.push('<< /Length '+len+' >>\nstream\n'+content+'\nendstream');
+}
+objs[2]='<< /Type /Pages /Kids ['+pageRefs.join(' ')+'] /Count '+pageRefs.length+' >>';
+let chunks=['%PDF-1.4\n'],offsets=[0],offset=encoder.encode(chunks[0]).length;
+for(let i=1;i<objs.length;i++){offsets[i]=offset;let part=i+' 0 obj\n'+objs[i]+'\nendobj\n';chunks.push(part);offset+=encoder.encode(part).length}
+let xref='xref\n0 '+objs.length+'\n0000000000 65535 f \n';
+for(let i=1;i<objs.length;i++)xref+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+let tail='trailer\n<< /Size '+objs.length+' /Root 1 0 R >>\nstartxref\n'+offset+'\n%%EOF';
+chunks.push(xref+tail);
+const bytes=encoder.encode(chunks.join(''));
+const safe=norm(d.cliente).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,35);
+return new File([bytes],'Romaneio_MigPlast_'+safe+'_'+norm(d.id)+'.pdf',{type:'application/pdf'});
+}
+function baixarPDFRomaneio(id){
+try{const file=gerarArquivoRomaneioPDF(id),url=URL.createObjectURL(file),a=document.createElement('a');a.href=url;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000)}
+catch(e){alert('Erro ao gerar PDF: '+e.message)}
+}
+async function compartilharPDFWhatsApp(id){
+try{
+const file=gerarArquivoRomaneioPDF(id);
+if(navigator.share&&(!navigator.canShare||navigator.canShare({files:[file]}))){
+await navigator.share({files:[file],title:'Romaneio MigPlast',text:'Segue o romaneio em PDF.'});
+}else{
+baixarPDFRomaneio(id);
+alert('O PDF foi baixado. Abra Downloads, selecione o PDF e toque em Compartilhar > WhatsApp. O navegador não permite anexar o arquivo automaticamente.');
+}
+}catch(e){if(e.name!=='AbortError')alert('Não foi possível compartilhar o PDF: '+e.message)}
+}
+function salvarRomaneioPDF(){window.print()}
+function escolherPDFRomaneio(id){
+let input=document.getElementById('arquivoPDFRomaneio');
+if(!input)return alert('Seletor de PDF não encontrado.');
+input.dataset.romaneio=id;
+input.value='';
+input.click();
+}
+async function enviarPDFRomaneio(input){
+let file=input.files&&input.files[0];if(!file)return;
+if(!/\.pdf$/i.test(file.name)&&file.type!=='application/pdf')return alert('Selecione o romaneio salvo em PDF.');
+try{
+if(navigator.canShare&&navigator.share&&navigator.canShare({files:[file]})){
+await navigator.share({files:[file],title:'Romaneio MigPlast',text:'Segue o romaneio em PDF.'});
+}else{
+alert('Este navegador não permite compartilhar o PDF diretamente. Abra o arquivo PDF em Downloads e escolha Compartilhar pelo WhatsApp ou e-mail.');
+}
+}catch(e){if(e.name!=='AbortError')alert('Não foi possível compartilhar o PDF: '+e.message)}
+}
+function compartilharRomaneio(id,canal){
+let d=docs.find(x=>String(x.id)===String(id));if(!d)return alert('Romaneio não encontrado.');
+let texto=textoRomaneio(id);
+if(canal==='whatsapp'){window.open('https://wa.me/?text='+encodeURIComponent(texto),'_blank');return}
+if(canal==='email'){window.location.href='mailto:?subject='+encodeURIComponent('Romaneio MigPlast '+d.id+' — '+d.cliente)+'&body='+encodeURIComponent(texto);return}
+if(canal==='sistema'){if(navigator.share){navigator.share({title:'Romaneio MigPlast '+d.id,text:texto}).catch(e=>{if(e.name!=='AbortError')alert('Compartilhamento indisponível: '+e.message)})}else alert('Compartilhamento do aparelho indisponível. Use WhatsApp ou e-mail.')}
+}
+function ticketHTML(){
+let d=docs.find(x=>x.id===ticketId),sales=db.filter(x=>['vendamaterial','vendamo'].includes(x.modulo)),clients=[...new Set(sales.map(x=>x.cliente).filter(Boolean))].sort();
+let used=new Set(docs.flatMap(x=>x.itens.map(i=>i.id))),pref=sales.find(x=>x.id===preselectedSaleIds[0]),initial=pref?.cliente||clients[0]||'',mod=pref?.modulo||'vendamaterial';
+let choose=`<div class="panel no-print"><h3>1. Criar romaneio com vários itens</h3><p class="hint">Escolha o cliente e marque todos os materiais que vão no mesmo romaneio. Um item já vinculado a um romaneio não aparece disponível para novo documento.</p><form onsubmit="saveTicket(event)" id="ticketForm"><div class="fields"><div><label>Cliente</label><select name="cliente" onchange="refreshItems()" required>${clients.map(c=>`<option ${c===initial?'selected':''}>${esc(c)}</option>`).join('')}</select></div><div><label>Tipo de venda</label><select name="modulo" onchange="refreshItems()"><option value="vendamaterial" ${mod==='vendamaterial'?'selected':''}>Venda de material</option><option value="vendamo" ${mod==='vendamo'?'selected':''}>Venda de M.O.</option></select></div><div><label>Data do romaneio</label><input name="data" type="date" value="${new Date().toISOString().slice(0,10)}" required></div></div><button class="primary" type="button" onclick="selecionarMateriais()">☑ Selecionar materiais do cliente</button><div id="ticketItems" style="margin:14px 0"></div><div id="ticketSelection" style="font-weight:bold;color:#126443;margin:12px 0">0 materiais selecionados</div><button class="primary" type="submit">💾 Gerar e salvar romaneio único</button></form></div>`;
+let bankForm=`<div class="panel no-print"><h3>2. Dados bancários para pagamento</h3><p class="hint">Salve uma vez; serão incluídos automaticamente nos próximos romaneios. Os romaneios já salvos mantêm os dados da emissão.</p><form onsubmit="saveBank(event)"><div class="fields">${[['favorecido','Favorecido / Titular'],['pix','Chave Pix'],['banco','Banco'],['agencia','Agência'],['conta','Conta e dígito'],['tipo','Tipo de conta']].map(([k,t])=>`<div><label>${t}</label><input name="${k}" value="${esc(bank[k])}"></div>`).join('')}</div><button class="primary">Salvar dados bancários</button></form></div>`;
+let saved=`<div class="panel no-print"><h3>3. Romaneios salvos (${docs.length})</h3><div class="scroll"><table><thead><tr><th>Nº</th><th>Cliente</th><th>Data</th><th>Itens</th><th>Total</th><th>Ações</th></tr></thead><tbody>${docs.slice().reverse().map(x=>`<tr><td>${esc(x.id)}</td><td>${esc(x.cliente)}</td><td>${esc(x.data)}</td><td>${x.itens.length}</td><td>${brl(x.itens.reduce((a,i)=>a+n(i.kg)*n(i.preco),0))}</td><td><button class="secondary" onclick="ticket('${x.id}')">Abrir</button> <button class="secondary" onclick="compartilharPDFWhatsApp('${x.id}')">📤 PDF WhatsApp</button> <button class="secondary" onclick="compartilharRomaneio('${x.id}','email')">E-mail</button> <button class="secondary danger" onclick="excluirRomaneio('${x.id}')">🗑 Excluir</button></td></tr>`).join('')}</tbody></table></div></div>`;
+let paper=d?`<div class="panel ticket-paper"><div class="row"><div><h2 style="color:#126443;margin:0">♻ MIGPLAST</h2><b>ROMANEIO DE ${d.modulo==='vendamo'?'SERVIÇOS':'VENDA DE MATERIAL'}</b></div><div style="text-align:right"><b>Nº ${esc(d.id)}</b><div>${esc(d.data)}</div></div></div><hr><p><b>Cliente:</b> ${esc(d.cliente)}</p><div class="scroll"><table><thead><tr><th>Item</th><th>Material</th><th>Peso (kg)</th><th>Preço/kg</th><th>Subtotal</th></tr></thead><tbody>${d.itens.map((i,k)=>`<tr><td>${k+1}</td><td>${esc(i.material)}</td><td>${fmt(i.kg)}</td><td>${brl(i.preco)}</td><td>${brl(n(i.kg)*n(i.preco))}</td></tr>`).join('')}</tbody><tfoot><tr><th colspan="2">TOTAL</th><th>${fmt(d.itens.reduce((a,i)=>a+n(i.kg),0))} kg</th><th></th><th>${brl(d.itens.reduce((a,i)=>a+n(i.kg)*n(i.preco),0))}</th></tr></tfoot></table></div><h3>Dados para pagamento</h3><p><b>Favorecido:</b> ${esc(d.banco?.favorecido||'Não informado')}<br><b>Pix:</b> ${esc(d.banco?.pix||'Não informado')}<br><b>Banco:</b> ${esc(d.banco?.banco||'Não informado')}<br><b>Agência:</b> ${esc(d.banco?.agencia||'Não informado')}<br><b>Conta:</b> ${esc(d.banco?.conta||'Não informado')}<br><b>Tipo:</b> ${esc(d.banco?.tipo||'Não informado')}</p><p style="margin-top:28px">Recebido por: _______________________________________</p><p>Data do recebimento: ____/____/________</p><p class="hint">Documento comercial de controle e entrega. Não substitui NF-e ou NFS-e.</p></div><div class="no-print"><p class="hint"><b>PDF para o cliente:</b> Toque em Salvar PDF para baixar o documento. Para enviar o arquivo ao cliente, toque em Compartilhar PDF no WhatsApp e escolha a conversa no Android.</p><button class="primary" onclick="baixarPDFRomaneio('${d.id}')">📄 Salvar PDF</button> <button class="primary" onclick="compartilharPDFWhatsApp('${d.id}')">📤 Compartilhar PDF no WhatsApp</button> <input id="arquivoPDFRomaneio" type="file" accept="application/pdf,.pdf" style="display:none" onchange="enviarPDFRomaneio(this)"> <button class="secondary" onclick="compartilharRomaneio('${d.id}','whatsapp')">WhatsApp (texto)</button> <button class="secondary" onclick="compartilharRomaneio('${d.id}','email')">✉ E-mail</button> <button class="secondary" onclick="compartilharRomaneio('${d.id}','sistema')">↗ Compartilhar</button> <button class="secondary" onclick="ticket(null)">Novo romaneio</button></div>`:'';
+setTimeout(()=>{if(document.getElementById('ticketItems'))refreshItems()},0);
+return `<div class="no-print">${choose}${bankForm}${saved}</div>${paper}`}
+function refreshItems(){
+let form=document.getElementById('ticketForm');if(!form)return;
+let client=form.elements.cliente.value,mod=form.elements.modulo.value;
+let used=new Set(docs.flatMap(x=>x.itens.map(i=>String(i.id))));
+let norm=v=>String(v||'').trim().toLocaleLowerCase('pt-BR');
+let items=db.filter(x=>x.modulo===mod&&norm(x.cliente)===norm(client)&&!used.has(String(x.id)));
+let box=document.getElementById('ticketItems');
+let selected=new Set(preselectedSaleIds.map(String));
+box.innerHTML=items.length?`<div class="scroll"><table><thead><tr><th>Selecionar</th><th>Data</th><th>Material</th><th>Kg</th><th>Preço/kg</th><th>Subtotal</th></tr></thead><tbody>${items.map(x=>`<tr><td><input type="checkbox" name="item" value="${esc(x.id)}" ${selected.size?(selected.has(String(x.id))?'checked':''):'checked'} onchange="atualizarSelecao()" style="width:22px;height:22px;accent-color:#126443"></td><td>${esc(x.data)}</td><td>${esc(x.material)}</td><td>${fmt(x.kg)}</td><td>${brl(x.preco)}</td><td>${brl(total(x))}</td></tr>`).join('')}</tbody></table></div>`:'<p class="hint">Não há itens disponíveis para este cliente e tipo de venda. Confira se já estão vinculados a outro romaneio.</p>';
+if(items.length)atualizarSelecao();
+else {let out=document.getElementById('ticketSelection');if(out)out.textContent='0 materiais disponíveis — verifique o cliente e os romaneios salvos.'}
+}
+
+function custosHTML(){
+const data=filtered(),sum=(mod)=>data.filter(r=>r.modulo===mod).reduce((a,r)=>a+total(r),0);
+const vendas=data.filter(r=>['vendamaterial','vendamo'].includes(r.modulo)),kgTotal=vendas.reduce((a,r)=>a+n(r.kg),0);
+const ops=['fretes','despesas','salarios','diaristas','triagem'];
+const custoOp=ops.reduce((a,k)=>a+sum(k),0),custoOpKg=kgTotal?custoOp/kgTotal:0;
+const etapas=['Moagem','Lavagem','Material pronto para venda'];
+const producao=data.filter(r=>r.modulo==='producao');
+const custosEtapas=etapas.map(etapa=>{
+const kg=producao.filter(r=>r.etapa===etapa).reduce((a,r)=>a+n(r.kg),0);
+const gasto=data.filter(r=>ops.includes(r.modulo)&&r.etapa===etapa).reduce((a,r)=>a+total(r),0);
+return {etapa,kg,gasto,custoKg:kg?gasto/kg:null};
+});
+const gastoGeral=data.filter(r=>ops.includes(r.modulo)&&(!r.etapa||r.etapa==='Geral')).reduce((a,r)=>a+total(r),0);
+const custoEtapasHTML=`<div class="panel"><h3>Custos separados por etapa de produção</h3><p class="hint">Registre os quilos no módulo Produção por Etapa e escolha a etapa em cada despesa, frete, salário, diarista ou triagem. Custos gerais e registros antigos ficam separados para evitar rateios arbitrários.</p><div class="scroll"><table><thead><tr><th>Etapa</th><th>Produzido</th><th>Custos vinculados</th><th>Custo por kg</th></tr></thead><tbody>${custosEtapas.map(x=>`<tr><td>${x.etapa}</td><td>${fmt(x.kg)} kg</td><td>${brl(x.gasto)}</td><td>${x.custoKg===null?'Sem produção cadastrada':brl(x.custoKg)+'/kg'}</td></tr>`).join('')}<tr><th>Custos gerais / sem etapa</th><td>—</td><th>${brl(gastoGeral)}</th><td>Não rateado</td></tr></tbody></table></div><p class="hint">Custo por kg de cada etapa = custos diretamente atribuídos à etapa ÷ kg produzidos nessa etapa. Para obter custo completo do produto acabado, ainda é necessário definir o rateio dos custos gerais e vincular lotes, perdas e custos de matéria-prima.</p></div>`;
+const compraPorMat={};
+for(const r of db.filter(x=>x.modulo==='compras'&&(!reportEnd||x.data<=reportEnd))){let k=r.material,x=compraPorMat[k]||(compraPorMat[k]={kg:0,valor:0});x.kg+=n(r.kg);x.valor+=total(r)}
+const linhas={};
+for(const r of vendas){let key=r.modulo+'|||'+r.material,x=linhas[key]||(linhas[key]={modulo:r.modulo,material:r.material,kg:0,receita:0});x.kg+=n(r.kg);x.receita+=total(r)}
+let custoMaterialEstimado=0,semCompra=0;
+let rows=Object.values(linhas).map(x=>{let preco=x.kg?x.receita/x.kg:0,cp=x.modulo==='vendamaterial'&&compraPorMat[x.material]?.kg?compraPorMat[x.material].valor/compraPorMat[x.material].kg:0,temBase=x.modulo==='vendamo'||!!compraPorMat[x.material]?.kg;if(x.modulo==='vendamaterial'&&!temBase)semCompra++;let mat=x.modulo==='vendamaterial'?cp*x.kg:0;custoMaterialEstimado+=mat;let op=custoOpKg*x.kg,custoKg=custoOpKg+cp,margem=preco?(preco-custoKg)/preco*100:0;return {...x,preco,cp,custoKg,op,mat,resultado:x.receita-op-mat,margem,temBase}});
+const receita=vendas.reduce((a,r)=>a+total(r),0),resultado=receita-custoOp-custoMaterialEstimado;
+return `<div class="panel no-print"><div class="row"><h2>🧮 Custo operacional e margem por kg</h2><button class="secondary" onclick="window.print()">🖨 Imprimir / PDF</button></div><div class="fields"><div><label>De</label><input type="date" value="${reportStart}" onchange="setFilter('start',this.value)"></div><div><label>Até</label><input type="date" value="${reportEnd}" onchange="setFilter('end',this.value)"></div></div><button class="secondary" onclick="reportStart='';reportEnd='';render()">Todo o período</button><p class="hint">O custo operacional é rateado pelos kg faturados no período. Compras de material são tratadas separadamente para evitar contar estoque não vendido como despesa operacional.</p></div>
+<div class="panel"><h3>Resumo do período</h3><div class="summary"><div>Kg faturados (venda + serviço)<b>${fmt(kgTotal)} kg</b></div><div>Custos operacionais<b>${brl(custoOp)}</b></div><div>Custo operacional / kg<b>${kgTotal?brl(custoOpKg)+'/kg':'—'}</b></div><div>Receita faturada<b>${brl(receita)}</b></div><div>Resultado estimado após rateio<b>${kgTotal&&semCompra===0?brl(resultado):'Base incompleta'}</b></div></div>
+${custoEtapasHTML}<h3>Composição do custo operacional</h3><div class="scroll"><table><thead><tr><th>Conta</th><th>Total</th><th>Por kg faturado</th></tr></thead><tbody>${[['Fretes','fretes'],['Despesas gerais','despesas'],['Salários','salarios'],['Diaristas','diaristas'],['M.O. Triagem','triagem']].map(([label,k])=>`<tr><td>${label}</td><td>${brl(sum(k))}</td><td>${kgTotal?brl(sum(k)/kgTotal):'—'}</td></tr>`).join('')}<tr><th>Total operacional</th><th>${brl(custoOp)}</th><th>${kgTotal?brl(custoOpKg):'—'}</th></tr></tbody></table></div>
+<h3>Preço de venda × custo × margem por material</h3><div class="scroll"><table><thead><tr><th>Operação</th><th>Material</th><th>Kg</th><th>Venda / kg</th><th>Compra / kg estimada</th><th>Operação / kg</th><th>Custo total / kg</th><th>Margem estimada</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${x.modulo==='vendamo'?'Serviço M.O.':'Venda material'}</td><td>${esc(x.material)}</td><td>${fmt(x.kg)}</td><td>${brl(x.preco)}</td><td>${x.modulo==='vendamo'?'Não se aplica':x.temBase?brl(x.cp):'Sem custo de compra'}</td><td>${brl(custoOpKg)}</td><td>${x.temBase?brl(x.custoKg):'—'}</td><td>${x.temBase?fmt(x.margem)+'%':'—'}</td></tr>`).join('')||'<tr><td colspan="8">Cadastre vendas ou serviços para calcular o custo por kg.</td></tr>'}</tbody></table></div>
+<p class="hint"><b>Como calculamos:</b> custo operacional/kg = (fretes + despesas + salários + diaristas + triagem) ÷ kg faturados. Na venda de material, soma-se o custo médio histórico de compra/kg do mesmo material; nos serviços M.O., não há compra de material. Margem estimada = (preço/kg − custo/kg) ÷ preço/kg × 100.</p>
+<p class="hint"><b>Atenção:</b> este é um rateio gerencial simplificado. Não separa automaticamente custos entre operações, não considera perdas/rendimento, estoque inicial, tributos, depreciação nem custo real por lote. Se houver material comprado fora do módulo Compras, a margem fica indisponível. Cadastre todos os gastos e use o filtro de datas para analisar um período completo. Não interprete o resultado como lucro contábil.</p></div>`;
+}
+function painelHTML(){
+let sm=id=>db.filter(r=>r.modulo===id).reduce((a,r)=>a+total(r),0),q=id=>db.filter(r=>r.modulo===id).reduce((a,r)=>a+n(r.kg),0);
+let own=Object.values(stock('proprio')),mo=Object.values(stock('moestoque')),totalVenda=own.reduce((a,x)=>a+materialBalance(x.material),0),valorVenda=own.reduce((a,x)=>a+materialBalance(x.material)*x.preco,0);
+let lavar=mo.reduce((a,x)=>a+x.lavar,0),lavado=mo.reduce((a,x)=>a+x.lavado,0),vlavar=mo.reduce((a,x)=>a+x.lavar*x.preco,0),vlavado=mo.reduce((a,x)=>a+x.lavado*x.preco,0);
+let receita=sm('vendamaterial')+sm('vendamo'),gastos=['compras','fretes','despesas','salarios','diaristas','triagem'].reduce((a,k)=>a+sm(k),0),resultado=receita-gastos;
+const card=(title,value,items,dest)=>`<button class="tile kpi-color" style="min-height:155px" onclick="go('${dest}')"><small>${title}</small><b>${value}</b>${items.map(x=>`<small style="display:block;margin-top:5px">${esc(x)}</small>`).join('')}<small style="display:block;margin-top:10px;color:#126443">Ver detalhes →</small></button>`;
+let status=receita===0?'neutro':resultado<0?'negativo':'positivo',msg=receita===0?'⚠️ Sem faturamento registrado':resultado<0?'🚨 ALERTA: resultado financeiro negativo de '+brl(Math.abs(resultado)):'✅ Resultado financeiro positivo de '+brl(resultado);
+let info=receita===0?'Cadastre as vendas para acompanhar a margem e o resultado.':resultado<0?'As saídas lançadas superam o faturamento. Confira compras, despesas e pagamentos.':'O faturamento está acima das saídas registradas no período total.';
+const linhasOwn=(value)=>own.filter(x=>materialBalance(x.material)>0).map(x=>`${x.material}: ${value?brl(materialBalance(x.material)*x.preco):fmt(materialBalance(x.material))+' kg'}`);
+const linhasMo=(key,value)=>mo.filter(x=>x[key]>0).map(x=>`${x.cliente} / ${x.material}: ${value?brl(x[key]*x.preco):fmt(x[key])+' kg'}`);
+return `<div class="row"><h2>📊 Painel de Controle</h2><button class="secondary" onclick="go('inicio')">Central de Lançamentos</button></div><p class="hint">Indicadores automáticos dos lançamentos. Clique em cada cartão para abrir o módulo correspondente.</p><div class="alerta ${status}">${msg}<div class="subalerta">${info}</div></div><div class="grid">
+${card('Estoque próprio — Venda',fmt(totalVenda)+' kg',linhasOwn(false),'proprio')}
+${card('Valor potencial — Venda',brl(valorVenda),linhasOwn(true),'proprio')}
+${card('Estoque M.O. — A lavar',fmt(lavar)+' kg',linhasMo('lavar',false),'moestoque')}
+${card('Valor serviço — A lavar',brl(vlavar),linhasMo('lavar',true),'moestoque')}
+${card('Estoque M.O. — Lavado',fmt(lavado)+' kg',linhasMo('lavado',false),'moestoque')}
+${card('Valor serviço — Lavado',brl(vlavado),linhasMo('lavado',true),'moestoque')}
+${card('Compras de material',brl(sm('compras')),[fmt(q('compras'))+' kg comprados'],'compras')}
+${card('Fretes',brl(sm('fretes')),[],'fretes')}
+${card('Venda de material',brl(sm('vendamaterial')),[fmt(q('vendamaterial'))+' kg vendidos'],'vendamaterial')}
+${card('Venda de M.O.',brl(sm('vendamo')),[fmt(q('vendamo'))+' kg faturados'],'vendamo')}
+${card('Despesas gerais',brl(sm('despesas')),[],'despesas')}
+${card('Salários',brl(sm('salarios')),[],'salarios')}
+${card('Diaristas',brl(sm('diaristas')),[],'diaristas')}
+${card('Custo por kg e margens','Ver análise',[],'custos')}
+${card('M.O. Triagem',brl(sm('triagem')),[fmt(q('triagem'))+' kg triados'],'triagem')}
+${card('Faturamento total',brl(receita),[],'relatorio')}
+${card('Saídas registradas',brl(gastos),[],'relatorio')}
+${card('Saldo financeiro',brl(resultado),[],'relatorio')}
+${card('Margem financeira',receita?fmt(resultado/receita*100)+'%':'—',[],'relatorio')}
+</div><div class="alerta ${status}">${msg}<div class="subalerta">${info} Margem financeira: ${receita?fmt(resultado/receita*100)+'%':'não disponível'}.</div></div><p class="hint">Os valores de estoque são estimativas de precificação, não faturamento. O saldo é financeiro e ainda não representa lucro líquido contábil.</p>`}
+function report(){
+let data=filtered(),s=id=>data.filter(x=>x.modulo===id).reduce((a,r)=>a+total(r),0),qty=id=>data.filter(x=>x.modulo===id).reduce((a,r)=>a+n(r.kg),0);
+let receita=s('vendamaterial')+s('vendamo'),gastos=s('compras')+s('fretes')+s('despesas')+s('salarios')+s('diaristas')+s('triagem'),saldo=receita-gastos,margem=receita?saldo/receita*100:0;
+let mat={};for(let r of data){if(!['compras','vendamaterial','vendamo','triagem'].includes(r.modulo))continue;let key=r.modulo+'|||'+r.material,x=mat[key]||(mat[key]={modulo:r.modulo,material:r.material,kg:0,valor:0});x.kg+=n(r.kg);x.valor+=total(r)}
+let groups=[['Compra de material','compras'],['Fretes','fretes'],['Despesas gerais','despesas'],['Salários','salarios'],['Diaristas','diaristas'],['M.O. Triagem','triagem']];
+let rows=Object.values(mat).sort((a,b)=>a.modulo.localeCompare(b.modulo)||a.material.localeCompare(b.material));
+return `<div class="panel no-print"><div class="row"><h3>Período de apresentação</h3><button class="secondary" onclick="window.print()">🖨 Imprimir / Salvar PDF</button></div><div class="fields"><div><label>De</label><input type="date" value="${reportStart}" onchange="setFilter('start',this.value)"></div><div><label>Até</label><input type="date" value="${reportEnd}" onchange="setFilter('end',this.value)"></div></div><button class="secondary" onclick="reportStart='';reportEnd='';render()">Mostrar todo o período</button></div>
+<div class="panel"><h2>Apresentação de Resultados — MigPlast</h2><p class="hint">Período: ${reportStart||'Início'} até ${reportEnd||'data atual'} · ${data.length} lançamentos no período</p>
+<div class="summary"><div>Faturamento material<b>${brl(s('vendamaterial'))}</b><small>${fmt(qty('vendamaterial'))} kg vendidos</small></div><div>Faturamento M.O.<b>${brl(s('vendamo'))}</b><small>${fmt(qty('vendamo'))} kg faturados</small></div><div>Faturamento total<b>${brl(receita)}</b></div><div>Compras + despesas<b>${brl(gastos)}</b></div><div>Saldo financeiro<b class="${saldo<0?'danger':''}">${brl(saldo)}</b></div><div>Margem financeira<b>${receita?fmt(margem)+'%':'—'}</b></div></div>
+<p class="hint"><b>Custo por kg:</b> abra o módulo 🧮 Custos por kg e Margens para analisar salários, diaristas, triagem, fretes e demais despesas rateados pela produção faturada.</p><h3>Detalhamento financeiro</h3><div class="scroll"><table><thead><tr><th>Conta</th><th>Valor (R$)</th></tr></thead><tbody><tr><td>(+) Venda de Material</td><td>${brl(s('vendamaterial'))}</td></tr><tr><td>(+) Venda de M.O.</td><td>${brl(s('vendamo'))}</td></tr>${groups.map(([name,id])=>`<tr><td>(−) ${name}</td><td>${brl(s(id))}</td></tr>`).join('')}<tr><th>Saldo financeiro</th><th>${brl(saldo)}</th></tr></tbody></table></div>
+<h3>Resultados por material</h3><div class="scroll"><table><thead><tr><th>Operação</th><th>Material</th><th>Quantidade</th><th>Valor</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(icons.find(i=>i[0]===x.modulo)?.[2]||x.modulo)}</td><td>${esc(x.material)}</td><td>${fmt(x.kg)} kg</td><td>${brl(x.valor)}</td></tr>`).join('')||'<tr><td colspan="4">Nenhum lançamento no período</td></tr>'}</tbody></table></div>
+<h3>Posição atual dos estoques</h3><div class="scroll"><table><thead><tr><th>Estoque</th><th>Material</th><th>Quantidade</th><th>Referência de valor</th></tr></thead><tbody>${Object.values(stock('proprio')).map(x=>`<tr><td>Próprio para venda</td><td>${esc(x.material)}</td><td>${fmt(materialBalance(x.material))} kg</td><td>${brl(materialBalance(x.material)*x.preco)}</td></tr>`).join('')}${Object.values(stock('moestoque')).map(x=>`<tr><td>M.O. a lavar — ${esc(x.cliente)}</td><td>${esc(x.material)}</td><td>${fmt(x.lavar)} kg</td><td>${brl(x.lavar*x.preco)}</td></tr><tr><td>M.O. lavado — ${esc(x.cliente)}</td><td>${esc(x.material)}</td><td>${fmt(x.lavado)} kg</td><td>${brl(x.lavado*x.preco)}</td></tr>`).join('')}</tbody></table></div>
+<p class="hint">Os estoques acima mostram a posição atual, não o saldo histórico no período selecionado. Valores de estoque são referências de precificação, não receitas realizadas.</p>
+<p class="hint"><b>Critério:</b> o resultado apresentado é um saldo financeiro gerencial (faturamento menos compras e despesas lançadas). Ainda não representa lucro líquido contábil, pois não calcula o custo efetivo dos materiais vendidos, estoque inicial/final, impostos e demais ajustes. A margem exibida é a margem financeira estimada.</p></div>`}
+
+render();
+</script><script>
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js')
+    .catch(err => console.warn('Offline indisponível:', err)));
+}
+</script></body></html>
