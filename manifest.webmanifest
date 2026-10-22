@@ -1,7 +1,6 @@
 {
   "name": "MigPlast — Sistema de Gestão",
   "short_name": "MigPlast",
-  "description": "Gestão de reciclagem, custos, produção e romaneios",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
