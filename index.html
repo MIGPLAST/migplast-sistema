@@ -16,7 +16,7 @@
 #authScreen{position:fixed;inset:0;z-index:9999;background:#eef5f0;display:flex;align-items:center;justify-content:center;padding:18px}#authScreen .authBox{background:white;padding:24px;border-radius:16px;max-width:420px;width:100%;box-shadow:0 8px 30px #0002}#authScreen input{width:100%;margin:6px 0 12px;padding:12px}#cloudBar{padding:8px 16px;background:#dff1e8;display:flex;gap:10px;flex-wrap:wrap;align-items:center}#cloudBar button{padding:8px}#authScreen[hidden],#cloudBar[hidden]{display:none!important}
 </style>
 <div id="authScreen"><div class="authBox"><h2>♻ MigPlast — Acesso seguro</h2><p>Versão de testes com Supabase. Faça login para acessar o sistema.</p><form id="authForm"><label>E-mail</label><input type="email" id="loginEmail" required autocomplete="username"><label>Senha</label><input type="password" id="loginPass" required autocomplete="current-password"><button class="primary" type="submit">Entrar</button></form><p id="authMsg" role="status"></p><small>Use os usuários cadastrados no Supabase. Nunca envie senhas pelo WhatsApp.</small></div></div>
-<div id="cloudBar" hidden><strong id="cloudWho"></strong><span id="cloudStatus">Nuvem: aguardando</span><button onclick="cloudDownload()">⬇ Receber da nuvem</button><button id="cloudUploadBtn" style="display:none" onclick="cloudUpload()">⬆ Sincronizar somente 752 kg</button><button onclick="cloudLogout()">Sair</button></div>
+<div id="cloudBar" hidden><strong id="cloudWho"></strong><span id="cloudStatus">Nuvem: aguardando</span><button onclick="cloudDownload()">⬇ Receber da nuvem</button><button id="cloudUploadBtn" onclick="cloudUpload()">⬆ Enviar à nuvem</button><button onclick="cloudLogout()">Sair</button></div>
 <script>
 const SB_URL='https://yocjztsueqaiyvpsmvea.supabase.co';
 const SB_KEY='sb_publishable_Gz7k5JFZOWURFQU6FcIl0A_kuwoNh9e';
@@ -28,28 +28,123 @@ async function cloudToken(){if(!cloudSession)throw Error('Faça login novamente'
 async function cloudLogin(email,password){let data=await sb('/auth/v1/token?grant_type=password',{method:'POST',body:{email,password}});cloudSession={access_token:data.access_token,refresh_token:data.refresh_token,expires_at:Date.now()+data.expires_in*1000,user:data.user};let profile=await sb('/rest/v1/migplast_usuarios?select=papel,nome&usuario_id=eq.'+encodeURIComponent(data.user.id),{token:data.access_token});if(!profile.length||!['administrador','operador'].includes(profile[0].papel))throw Error('Usuário sem perfil autorizado');cloudRole=profile[0].papel;sessionStorage.setItem('migplast_cloud_session',JSON.stringify(cloudSession));document.getElementById('authScreen').hidden=true;document.getElementById('cloudBar').hidden=false;document.getElementById('cloudWho').textContent=(profile[0].nome||email)+' ('+cloudRole+')';document.getElementById('cloudUploadBtn').hidden=cloudRole!=='administrador';if(cloudRole==='operador'){db=[];docs=[];bank={};fin={contas:[],movimentos:[],saldos:[]};page='inicio'}cloudStatus('conectado; sincronização manual de teste');render()}
 function cloudLogout(){cloudSession=null;cloudRole=null;sessionStorage.removeItem('migplast_cloud_session');location.reload()}
 function cloudGuid(){return crypto.randomUUID()}
-async function cloudUpload(){
- if(cloudRole!=='administrador')return alert('Apenas o administrador pode sincronizar.');
- const candidates=db.filter(r=>r.modulo==='moestoque'&&r.movimento==='Lavado pronto'&&moMaterialBase(r.material)==='Aparas Branca'&&String(r.cliente||'').trim().toUpperCase()==='IVC EMBALAGENS'&&Math.abs(n(r.kg)-752)<0.001&&r.data==='2026-10-23');
- if(candidates.length!==1)return alert('Sincronização protegida: esperado exatamente 1 lançamento de 752 kg de aparas brancas lavadas para IVC em 23/10/2026. Encontrados: '+candidates.length+'. Nenhum dado foi enviado.');
- const record=candidates[0];
- if(!confirm('Enviar SOMENTE o lançamento de 752 kg lavados da IVC, de 23/10/2026? Nenhum outro lançamento será enviado. Confirme que possui backup JSON.'))return;
- const button=document.getElementById('cloudUploadBtn');if(button)button.disabled=true;
- try{
-  cloudStatus('verificando duplicações...');const token=await cloudToken();
-  const rows=await sb('/rest/v1/migplast_operacional?select=modulo,dados&modulo=eq.moestoque&limit=10000',{token});
-  const matches=rows.filter(x=>x.dados&&(String(x.dados.id)===String(record.id)||
-   (x.dados.modulo==='moestoque'&&x.dados.movimento==='Lavado pronto'&&x.dados.data===record.data&&String(x.dados.cliente||'').trim().toUpperCase()==='IVC EMBALAGENS'&&moMaterialBase(x.dados.material)==='Aparas Branca'&&Math.abs(n(x.dados.kg)-752)<0.001)));
-  if(matches.length){cloudStatus('lançamento já encontrado na nuvem');return alert('O lançamento de 752 kg já consta na nuvem. Nada foi reenviado.');}
-  cloudStatus('enviando apenas 752 kg...');
-  await sb('/rest/v1/migplast_operacional',{method:'POST',token,body:[{modulo:record.modulo,dados:record,criado_por:cloudSession.user.id}]});
-  const check=await sb('/rest/v1/migplast_operacional?select=modulo,dados&modulo=eq.moestoque&limit=10000',{token});
-  if(!check.some(x=>String(x.dados?.id)===String(record.id)))throw Error('Envio realizado, mas não foi possível confirmar o registro. NÃO tente enviar novamente sem conferir.');
-  cloudStatus('752 kg confirmados na nuvem');alert('Sucesso! Os 752 kg foram gravados e confirmados na nuvem. Agora podemos publicar a correção.');
- }catch(e){cloudStatus('atenção: '+e.message);alert('Não foi possível concluir a confirmação: '+e.message+' NÃO repita o envio sem conferir a nuvem.');}
- finally{if(button)button.disabled=false;}
+// Sincronização manual conservadora: adiciona registros ausentes, sem apagar registros remotos.
+async function cloudFetchAll(table,token){
+  let result=[];
+  for(let offset=0;offset<100000;offset+=1000){
+    const rows=await sb('/rest/v1/'+table+'?select=modulo,dados&order=criado_em.asc&limit=1000&offset='+offset,{token});
+    if(!Array.isArray(rows))throw Error('Resposta inválida da nuvem');
+    result.push(...rows);
+    if(rows.length<1000)return result;
+  }
+  throw Error('Limite de registros atingido; sincronização interrompida por segurança.');
 }
-async function cloudDownload(){if(!confirm('Receber dados da nuvem? Isso substituirá apenas os dados abertos nesta sessão. Faça backup local antes.'))return;try{cloudStatus('recebendo...');let token=await cloudToken();let op=await sb('/rest/v1/migplast_operacional?select=modulo,dados&order=criado_em.asc&limit=10000',{token});let priv=cloudRole==='administrador'?await sb('/rest/v1/migplast_financeiro?select=modulo,dados&order=criado_em.asc&limit=10000',{token}):[];let entries=op.filter(x=>x.modulo!=='romaneio').map(x=>x.dados);if(cloudRole==='administrador')entries.push(...priv.filter(x=>x.modulo!=='snapshot_financeiro').map(x=>x.dados));let seen=new Set();db=entries.filter(x=>{let k=String(x.id||JSON.stringify(x));if(seen.has(k))return false;seen.add(k);return true});docs=op.filter(x=>x.modulo==='romaneio').map(x=>x.dados);if(cloudRole==='administrador'){let snapshot=priv.filter(x=>x.modulo==='snapshot_financeiro').at(-1);if(snapshot){fin=snapshot.dados.financeiro||fin;bank=snapshot.dados.dadosBancarios||bank}save();saveFin();saveDocs()}page='inicio';render();cloudStatus('dados recebidos: '+db.length+' lançamentos');alert('Dados carregados nesta sessão. Versão de teste: ainda sem atualização automática.')}catch(e){cloudStatus('erro: '+e.message);alert('Erro ao receber: '+e.message)}}
+function cloudRecordKey(r){
+  return r&&r.id!=null&&String(r.id).trim()?'id:'+String(r.id):'json:'+JSON.stringify(r);
+}
+async function cloudUpload(){
+  if(cloudRole!=='administrador')return alert('Apenas o administrador pode enviar dados.');
+  if(!confirm('Enviar lançamentos que ainda não estão na nuvem? Faça backup JSON do celular antes. Este envio NÃO exclui registros da nuvem.'))return;
+  const button=document.getElementById('cloudUploadBtn');
+  if(button)button.disabled=true;
+  try{
+    cloudStatus('comparando registros...');
+    const token=await cloudToken();
+    const op=await cloudFetchAll('migplast_operacional',token);
+    const priv=await cloudFetchAll('migplast_financeiro',token);
+    const opKeys=new Set(op.filter(x=>x.dados).map(x=>cloudRecordKey(x.dados)));
+    const privKeys=new Set(priv.filter(x=>x.dados&&x.modulo!=='snapshot_financeiro').map(x=>cloudRecordKey(x.dados)));
+    const pendingOp=[],pendingPriv=[];
+    const localRecords=[...db,...docs.map(d=>({...d,modulo:'romaneio'}))];
+    for(const r of localRecords){
+      if(!r||!r.modulo)continue;
+      const operational=operationalModules.has(r.modulo);
+      const keys=operational?opKeys:privKeys;
+      const key=cloudRecordKey(r);
+      if(keys.has(key))continue;
+      // Protege contra a duplicação do lançamento legado de 752 kg, mesmo com outro ID.
+      const legacy=r.modulo==='moestoque'&&r.movimento==='Lavado pronto'&&r.data==='2026-10-23'&&
+        String(r.cliente||'').trim().toUpperCase()==='IVC EMBALAGENS'&&
+        moMaterialBase(r.material)==='aparas branca'&&Math.abs(n(r.kg)-752)<0.001;
+      if(legacy&&op.some(x=>x.dados&&x.dados.modulo==='moestoque'&&
+        x.dados.movimento==='Lavado pronto'&&x.dados.data===r.data&&
+        String(x.dados.cliente||'').trim().toUpperCase()==='IVC EMBALAGENS'&&
+        moMaterialBase(x.dados.material)==='aparas branca'&&Math.abs(n(x.dados.kg)-752)<0.001))continue;
+      (operational?pendingOp:pendingPriv).push({modulo:r.modulo,dados:r,criado_por:cloudSession.user.id});
+      keys.add(key);
+    }
+    const snapshotExists=priv.some(x=>x.modulo==='snapshot_financeiro');
+    const localFinanceHasData=(fin.contas?.length||0)+(fin.movimentos?.length||0)+(fin.saldos?.length||0)>0||
+      Object.values(bank||{}).some(v=>Boolean(v));
+    const addSnapshot=localFinanceHasData&&!snapshotExists;
+    if(!confirm('Serão enviados '+pendingOp.length+' registros operacionais/romaneios, '+pendingPriv.length+
+      ' registros financeiros e '+(addSnapshot?'1 snapshot financeiro':'nenhum snapshot financeiro')+
+      '. Nenhum registro existente será apagado. Continuar?'))return;
+    for(const [table,items] of [['migplast_operacional',pendingOp],['migplast_financeiro',pendingPriv]]){
+      for(let i=0;i<items.length;i+=100){
+        cloudStatus('enviando '+table+': '+Math.min(i+100,items.length)+'/'+items.length);
+        await sb('/rest/v1/'+table,{method:'POST',token,body:items.slice(i,i+100)});
+      }
+    }
+    if(addSnapshot){
+      await sb('/rest/v1/migplast_financeiro',{method:'POST',token,body:[{
+        modulo:'snapshot_financeiro',dados:{financeiro:fin,dadosBancarios:bank},
+        criado_por:cloudSession.user.id
+      }]});
+    }
+    const opCheck=await cloudFetchAll('migplast_operacional',token);
+    const privCheck=await cloudFetchAll('migplast_financeiro',token);
+    const verify=(items,rows)=>items.every(x=>rows.some(y=>y.modulo===x.modulo&&cloudRecordKey(y.dados)===cloudRecordKey(x.dados)));
+    if(!verify(pendingOp,opCheck)||!verify(pendingPriv,privCheck)||
+      (addSnapshot&&!privCheck.some(x=>x.modulo==='snapshot_financeiro')))
+      throw Error('Não foi possível confirmar todos os registros. Confira a nuvem antes de repetir.');
+    cloudStatus('envio confirmado');
+    alert('Envio confirmado! Novos registros: '+(pendingOp.length+pendingPriv.length)+
+      '. '+(snapshotExists?'Já existe um financeiro na nuvem; ele foi preservado.':'')+
+      ' No computador, use Receber da nuvem.');
+  }catch(e){
+    cloudStatus('atenção: '+e.message);
+    alert('Envio não confirmado: '+e.message+' Confira antes de repetir.');
+  }finally{if(button)button.disabled=false;}
+}
+async function cloudDownload(){
+  if(!confirm('Receber dados da nuvem e juntar aos dados deste aparelho, sem apagar lançamentos locais? Faça backup JSON antes.'))return;
+  try{
+    cloudStatus('recebendo...');
+    const token=await cloudToken();
+    const op=await cloudFetchAll('migplast_operacional',token);
+    const priv=cloudRole==='administrador'?await cloudFetchAll('migplast_financeiro',token):[];
+    const incoming=op.filter(x=>x.modulo!=='romaneio').map(x=>x.dados);
+    if(cloudRole==='administrador')incoming.push(...priv.filter(x=>x.modulo!=='snapshot_financeiro').map(x=>x.dados));
+    const keys=new Set(db.map(cloudRecordKey));
+    let added=0;
+    for(const r of incoming){if(!r)continue;const k=cloudRecordKey(r);if(!keys.has(k)){db.push(r);keys.add(k);added++;}}
+    const docKeys=new Set(docs.map(cloudRecordKey));
+    for(const x of op.filter(x=>x.modulo==='romaneio')){
+      if(x.dados&&!docKeys.has(cloudRecordKey(x.dados))){docs.push(x.dados);docKeys.add(cloudRecordKey(x.dados));}
+    }
+    if(cloudRole==='administrador'){
+      const snapshots=priv.filter(x=>x.modulo==='snapshot_financeiro');
+      const snapshot=snapshots.at(-1);
+      if(snapshot){
+        const remoteFin=snapshot.dados?.financeiro;
+        if(remoteFin){
+          for(const name of ['contas','movimentos','saldos']){
+            if(!Array.isArray(fin[name]))fin[name]=[];
+            const current=new Set(fin[name].map(cloudRecordKey));
+            for(const item of remoteFin[name]||[]){const k=cloudRecordKey(item);if(!current.has(k)){fin[name].push(item);current.add(k);}}
+          }
+        }
+        for(const [k,v] of Object.entries(snapshot.dados?.dadosBancarios||{})){
+          if(!bank[k])bank[k]=v;
+        }
+      }
+      if(!save()||!saveFin()||!saveDocs())throw Error('Falha ao salvar os dados recebidos localmente');
+    }
+    page='inicio';render();cloudStatus('recebido: '+added+' novos lançamentos');
+    alert('Recebimento concluído: '+added+' novos lançamentos. Dados locais preservados. Alterações em registros com o mesmo ID não são mescladas automaticamente.');
+  }catch(e){cloudStatus('erro: '+e.message);alert('Erro ao receber: '+e.message);}
+}
 window.addEventListener('DOMContentLoaded',()=>{document.getElementById('authForm').addEventListener('submit',async e=>{e.preventDefault();let msg=document.getElementById('authMsg');msg.textContent='Conectando...';try{await cloudLogin(document.getElementById('loginEmail').value,document.getElementById('loginPass').value);document.getElementById('loginPass').value='';msg.textContent=''}catch(err){msg.textContent='Erro: '+err.message;cloudSession=null}})})
 </script>
 <script>
